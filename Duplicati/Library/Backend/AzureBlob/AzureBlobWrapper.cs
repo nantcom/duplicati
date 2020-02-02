@@ -27,6 +27,7 @@ using Duplicati.Library.Common.IO;
 using Duplicati.Library.Interface;
 using Duplicati.Library.Utility;
 using Microsoft.WindowsAzure.Storage;
+using Microsoft.WindowsAzure.Storage.Auth;
 using Microsoft.WindowsAzure.Storage.Blob;
 
 namespace Duplicati.Library.Backend.AzureBlob
@@ -38,6 +39,7 @@ namespace Duplicati.Library.Backend.AzureBlob
     {
         private readonly string _containerName;
         private readonly CloudBlobContainer _container;
+        private readonly string _pathPrefix;
 
         public string[] DnsNames
         {
@@ -82,6 +84,45 @@ namespace Duplicati.Library.Backend.AzureBlob
             _container = blobClient.GetContainerReference(containerName);
         }
 
+        public AzureBlobWrapper(string sasUrl)
+        {
+            OperationContext.GlobalSendingRequest += (sender, args) =>
+            {
+                args.Request.UserAgent = string.Format(
+                    "APN/1.0 Duplicati/{0} AzureBlob/2.0 {1}",
+                    System.Reflection.Assembly.GetExecutingAssembly().GetName().Version,
+                    Microsoft.WindowsAzure.Storage.Shared.Protocol.Constants.HeaderConstants.UserAgent
+                );
+            };
+
+            if (sasUrl.Contains("?st=") == false)
+            {
+                throw new System.ArgumentException("sasUrl does not contain a token", "sasUrl");
+            }
+
+            var parts = sasUrl.Split('?');
+            var containerUrl = parts[0];
+            var sasToken = parts[1];
+
+            containerUrl = containerUrl.Replace("azure://", "https://");
+
+            // if user specified a path under container - make it a prefix of all request
+            var containerName = Uri.ExtractPath(containerUrl);
+            if (containerName.Contains("/"))
+            {
+                _pathPrefix = containerName.Substring(containerName.IndexOf('/') + 1);
+
+                containerName = containerName.Substring(0, containerName.IndexOf('/'));                 
+                containerUrl = containerUrl.Substring(0, containerUrl.IndexOf(_pathPrefix) - 1);
+
+                _pathPrefix = _pathPrefix + "/";
+            }
+
+            var credentials = new StorageCredentials(sasToken);
+            _container = new CloudBlobContainer( new System.Uri(containerUrl), credentials);
+            _containerName = _container.Name;
+        }
+
         public void AddContainer()
         {
             _container.Create(BlobContainerPublicAccessType.Off);
@@ -89,22 +130,27 @@ namespace Duplicati.Library.Backend.AzureBlob
 
         public virtual void GetFileStream(string keyName, Stream target)
         {
-            _container.GetBlockBlobReference(keyName).DownloadToStream(target);
+            _container.GetBlockBlobReference( _pathPrefix + keyName).DownloadToStream(target);
         }
 
         public virtual async Task AddFileStream(string keyName, Stream source, CancellationToken cancelToken)
         {
-            await _container.GetBlockBlobReference(keyName).UploadFromStreamAsync(source, cancelToken);
+            await _container.GetBlockBlobReference(_pathPrefix + keyName).UploadFromStreamAsync(source, cancelToken);
         }
 
         public void DeleteObject(string keyName)
         {
-            _container.GetBlockBlobReference(keyName).DeleteIfExists();
+            _container.GetBlockBlobReference(_pathPrefix + keyName).DeleteIfExists();
+        }
+
+        public void SetAccessTier(string keyName)
+        {
+            var blockBlob = _container.GetBlockBlobReference(_pathPrefix + keyName);
         }
 
         public virtual List<IFileEntry> ListContainerEntries()
         {
-            var listBlobItems = _container.ListBlobs(blobListingDetails: BlobListingDetails.Metadata);
+            var listBlobItems = _container.ListBlobs( prefix: _pathPrefix, blobListingDetails: BlobListingDetails.Metadata);
             try
             {
                 return listBlobItems.Select(x =>
@@ -113,6 +159,8 @@ namespace Duplicati.Library.Backend.AzureBlob
                     var containerSegment = string.Concat("/", _containerName, "/");
                     var blobName = absolutePath.Substring(absolutePath.IndexOf(
                         containerSegment, System.StringComparison.Ordinal) + containerSegment.Length);
+
+                    blobName = Path.GetFileName( x.StorageUri.PrimaryUri.AbsolutePath );
 
                     try
                     {

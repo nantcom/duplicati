@@ -62,10 +62,17 @@ namespace Duplicati.Library.Backend.AzureBlob
             if (!string.IsNullOrEmpty(uri.Password))
                 accessKey = uri.Password;
 
+            if (storageAccountName == null && accessKey == null)
+            {
+                _azureBlob = new AzureBlobWrapper(url);
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(storageAccountName))
             {
                 throw new UserInformationException(Strings.AzureBlobBackend.NoStorageAccountName, "AzureNoAccountName");
             }
+
             if (string.IsNullOrWhiteSpace(accessKey))
             {
                 throw new UserInformationException(Strings.AzureBlobBackend.NoAccessKey, "AzureNoAccessKey");
@@ -147,7 +154,32 @@ namespace Duplicati.Library.Backend.AzureBlob
                     new CommandLineArgument("auth-username", 
                         CommandLineArgument.ArgumentType.String, 
                         Strings.AzureBlobBackend.AuthUsernameDescriptionShort, 
-                        Strings.AzureBlobBackend.AuthUsernameDescriptionLong)
+                        Strings.AzureBlobBackend.AuthUsernameDescriptionLong),
+                    new CommandLineArgument("st",
+                        CommandLineArgument.ArgumentType.String,
+                        Strings.AzureBlobBackend.InternalParametersShort,
+                        Strings.AzureBlobBackend.InternalParameters),
+                    new CommandLineArgument("se",
+                        CommandLineArgument.ArgumentType.String,
+                        Strings.AzureBlobBackend.InternalParametersShort,
+                        Strings.AzureBlobBackend.InternalParameters),
+                    new CommandLineArgument("sp",
+                        CommandLineArgument.ArgumentType.String,
+                        Strings.AzureBlobBackend.InternalParametersShort,
+                        Strings.AzureBlobBackend.InternalParameters),
+                    new CommandLineArgument("sv",
+                        CommandLineArgument.ArgumentType.String,
+                        Strings.AzureBlobBackend.InternalParametersShort,
+                        Strings.AzureBlobBackend.InternalParameters),
+                    new CommandLineArgument("sr",
+                        CommandLineArgument.ArgumentType.String,
+                        Strings.AzureBlobBackend.InternalParametersShort,
+                        Strings.AzureBlobBackend.InternalParameters),
+                    new CommandLineArgument("sig",
+                        CommandLineArgument.ArgumentType.String,
+                        Strings.AzureBlobBackend.InternalParametersShort,
+                        Strings.AzureBlobBackend.InternalParameters),
+
                 });
 
             }
